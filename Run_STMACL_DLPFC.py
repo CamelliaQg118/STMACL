@@ -49,10 +49,7 @@ if not os.path.exists(savepath):
 n_clusters = 5 if slice in ['151669', '151670', '151671', '151672'] else 7
 
 adata, adj, edge_index, adj_mask = utils.graph_build(adata, adata_X, dataset)
-# print("adj_mask", adj_mask)
-# print('adj', adj)#加上自环且归一化后的邻接矩阵（标准）
-# print('edge_index', edge_index)#邻接矩阵索引
-# print('adj_np', adj_np)
+
 
 
 stmacl_net = STMACL.stmacl(adata.obsm['X_pca'], adata, adj, edge_index, adj_mask, n_clusters, dataset, device=device)
@@ -86,7 +83,7 @@ else:
     adata = adata[~pd.isnull(adata.obs['ground_truth'])]
 #####################################################################normal
 print("adata", adata)
-new_type = utils.refine_label(adata, radius=15, key='STMACL')
+new_type = utils.refine_label(adata, radius=10, key='STMACL')
 adata.obs['STMACL'] = new_type
 ARI = metrics.adjusted_rand_score(adata.obs['ground_truth'], adata.obs['STMACL'])
 NMI = metrics.normalized_mutual_info_score(adata.obs['ground_truth'], adata.obs['STMACL'])
@@ -100,7 +97,6 @@ print(str(slice))
 print(n_clusters)
 ARI_list.append(ARI)
 
-#绘制基本图
 plt.rcParams["figure.figsize"] = (3, 3)
 title = "Manual annotation (" + dataset + "#" + slice + ")"
 sc.pl.spatial(adata, img_key="hires", color=['ground_truth'], title=title, show=False)
@@ -113,10 +109,9 @@ sc.pl.spatial(adata, color=['STMACL'], ax=axes[1], show=False)
 axes[0].set_title("Manual annotation ("+ slice + ")")
 axes[1].set_title('ARI=%.4f, NMI=%.4f, acc=%.4f, f1=%.4f' % (ARI, NMI, acc, f1))
 
-# 将两张图片拼接起来
-plt.subplots_adjust(wspace=0.5)  # 增加两幅图之间的水平间距
-plt.subplots_adjust(hspace=0.5)  # 增加两幅图之间的垂直间距,需放在保存图片前否则没有效果
-plt.savefig(savepath + 'STMACL.jpg', dpi=300)  # 存储图片注意要在plot前面
+plt.subplots_adjust(wspace=0.5) 
+plt.subplots_adjust(hspace=0.5)  
+plt.savefig(savepath + 'STMACL.jpg', dpi=300)  
 
 
 sc.pp.neighbors(adata, use_rep='STMACL', metric='cosine')
@@ -143,30 +138,3 @@ plt.savefig(savepath + 'STMACL_PAGA_domain.tif', bbox_inches='tight', dpi=300)
 sc.tl.paga(adata, groups='ground_truth')
 sc.pl.paga_compare(adata, legend_fontsize=10, frameon=False, size=20, title=title, legend_fontoutline=2, show=False)
 plt.savefig(savepath + 'STMACL_PAGA_ground_truth.png', bbox_inches='tight', dpi=300)
-
-
-# ######################################################################GNNs
-# print("adata", adata)
-# new_type = utils.refine_label(adata, radius=15, key='STMACL')
-# adata.obs['STMACL'] = new_type
-# ARI = metrics.adjusted_rand_score(adata.obs['ground_truth'], adata.obs['STMACL'])
-# NMI = metrics.normalized_mutual_info_score(adata.obs['ground_truth'], adata.obs['STMACL'])
-# adata.uns["ARI"] = ARI
-# adata.uns["NMI"] = NMI
-#
-# print('===== Project: {}_{} ARI score: {:.4f}'.format(str(dataset), str(slice), ARI))
-# print('===== Project: {}_{} NMI score: {:.4f}'.format(str(dataset), str(slice), NMI))
-# print(str(slice))
-# print(n_clusters)
-# ARI_list.append(ARI)
-#
-# #绘制基本图
-# fig, axes = plt.subplots(1, 2, figsize=(4 * 2, 4))
-# sc.pl.spatial(adata, color='ground_truth', ax=axes[0], show=False)
-# sc.pl.spatial(adata, color=['STMACL'], ax=axes[1], show=False)
-# axes[0].set_title("Manual annotation")
-# axes[1].set_title('ARI=%.4f, NMI=%.4f, acc=%.4f, f1=%.4f' % (ARI, NMI, acc, f1))
-# # 将两张图片拼接起来
-# plt.subplots_adjust(wspace=0.5)  # 增加两幅图之间的水平间距
-# plt.subplots_adjust(hspace=0.5)  # 增加两幅图之间的垂直间距,需放在保存图片前否则没有效果
-# plt.savefig(savepath + '_gin.jpg', dpi=300)  # 存储图片注意要在plot前面
