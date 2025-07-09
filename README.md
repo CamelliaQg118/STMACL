@@ -1,5 +1,4 @@
 # STMACL
-Integrating modularity maximization and contrastive learning for identifying spatial domain from spatial transcriptomics
 
 The complete code will be made available after the article is published.
 __STMACL__
