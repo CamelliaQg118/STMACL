@@ -70,180 +70,6 @@ def cos(out, mask, temperature=0.2, scale_by_temperature=True):
     return loss.mean()
 
 
-# class stmacl:
-#     def __init__(
-#             self,
-#             X,
-#             adata,
-#             adj,
-#             edge_index,
-#             adj_mask,
-#             n_clusters,
-#             dataset,
-#             rec_w=10,
-#             lq_w=1,
-#             adj_w=1,
-#             cos_w=1,
-#             dec_tol=0.00,
-#             threshold=0.5,
-#             epochs=600,
-#             dec_interval=3,
-#             lr=0.0001,
-#             decay=0.0001,
-#             device='cuda:0',
-#             mode='clustering',
-#     ):
-#         self.random_seed = 42
-#         STMACL.fix_seed(self.random_seed)
-#
-#         self.n_clusters = n_clusters
-#         self.rec_w = rec_w
-#         self.lq_w = lq_w
-#         self.adj_w = adj_w
-#         self.cos_w = cos_w
-#
-#
-#         self.device = device
-#         self.dec_tol = dec_tol
-#         self.threshold = threshold #高置信度的阈值
-#
-#         self.adata = adata.copy()
-#         self.dataset = dataset
-#         self.cell_num = len(X)
-#         self.epochs = epochs
-#         self.dec_interval = dec_interval
-#         self.learning_rate = lr
-#         self.weight_decay = decay
-#         self.adata = adata.copy()
-#         # self.X = torch.FloatTensor(X.copy()).to(self.device)
-#         # self.input_dim = self.X.shape[1]
-#         self.adj = adj.to(self.device)
-#         self.adj_mask = adj_mask.to(self.device)
-#         self.edge_index = edge_index.to(self.device)
-#         self.mode = mode
-#
-#         if self.mode == 'clustering':
-#             self.X = torch.FloatTensor(self.adata.obsm['X_pca'].copy()).to(self.device)
-#         elif self.mode == 'imputation':
-#             self.X = torch.FloatTensor(self.adata.X.copy()).to(self.device)
-#         else:
-#             raise Exception
-#         self.input_dim = self.X.shape[-1]
-#
-#         self.model = stmacl_module(self.adj, self.input_dim, self.n_clusters).to(self.device)
-#
-#     def train(self, dec_tol=0.00):
-#         self.optimizer = torch.optim.Adam(self.model.parameters(), self.learning_rate, weight_decay=self.weight_decay)
-#
-#         # emb, rec, loss_rec, loss_lq, loss_zinb = self.model_eval()
-#         emb, rec, loss_rec, loss_zinb = self.model_eval()
-#
-#         self.model.train()
-#         list_rec = []
-#         list_lq = []
-#         list_adj = []
-#         list_cos = []
-#         epoch_max = 0
-#         ari_max = 0
-#         idx_max = []
-#         emb_max = []
-#
-#         if self.dataset in ['Human_Breast_Cancer', 'DLPFC', 'Mouse_Brain_Anterior_Section1']:
-#             for epoch in tqdm(range(self.epochs)):
-#                 self.model.train()
-#                 self.optimizer.zero_grad()
-#                 torch.set_grad_enabled(True)
-#                 # emb, rec, loss_rec, loss_lq, loss_zinb = self.model(self.X, self.adj, self.edge_index)
-#                 emb, rec, loss_rec, loss_adj = self.model(self.X, self.adj, self.edge_index)
-#                 out = scale(emb)
-#                 out = F.normalize(out, p=2, dim=1)
-#                 loss_cos = cos(out, self.adj_mask, temperature=0.07)
-#                 # loss_tatal = self.rec_w * loss_rec + self.lq_w * loss_lq + self.zinb_w * loss_zinb + self.cos_w * loss_cos
-#                 loss_tatal = self.rec_w * loss_rec + self.adj_w * loss_adj + self.cos_w * loss_cos
-#
-#                 loss_tatal.backward()
-#                 self.optimizer.step()
-#
-#                 # list_rec.append(loss_rec.detach().cpu().numpy())
-#                 # # list_lq.append(loss_lq.detach().cpu().numpy())
-#                 # list_adj.append(loss_adj.detach().cpu().numpy())
-#                 # list_cos.append(loss_cos.detach().cpu().numpy())
-#                 # print('loss_rec = {:.4f}'.format(loss_rec), #'loss_lq = {:.4f}'.format(loss_lq),
-#                 #       'loss_adj= {:.4f}'.format(loss_adj), 'loss_cos = {:.4f}'.format(loss_cos),
-#                 #       ' loss_total = {:.5f}'.format(loss_tatal))
-#                 # # emb, _, _, _, _ = self.model_eval()
-#                 emb, _, _, _ = self.model_eval()
-#                 kmeans = KMeans(n_clusters=self.n_clusters).fit(emb)
-#                 idx = kmeans.labels_
-#                 self.adata.obsm['STMACL'] = emb
-#                 # adata1 = ST_NMAE.mclust_R(self.adata, self.n_clusters, use_rep='STNMAE', key_added='STNMAE', random_seed=self.random_seed)
-#                 labels = self.adata.obs['ground']
-#                 labels = pd.to_numeric(labels, errors='coerce')
-#                 labels = pd.Series(labels).fillna(0).to_numpy()
-#                 idx = pd.Series(idx).fillna(0).to_numpy()
-#
-#                 ari_res = metrics.adjusted_rand_score(labels, idx)
-#                 if ari_res > ari_max:
-#                     ari_max = ari_res
-#                     epoch_max = epoch
-#                     idx_max = idx
-#                     emb_max = emb
-#                     rec1_max = rec
-#
-#             # import matplotlib.pyplot as plt
-#             # fig, ax = plt.subplots()
-#             # ax.plot(list_rec, label='rec')
-#             # ax.plot(list_cos, label='cos')
-#             # ax.plot(list_adj, label='adj')
-#             # ax.legend()
-#             # plt.show()
-#
-#             print("epoch_max", epoch_max)
-#             print("ARI=======", ari_max)
-#             nmi_res = metrics.normalized_mutual_info_score(labels, idx_max)
-#             print("NMI=======", nmi_res)
-#             self.adata.obs['STMACL'] = idx_max.astype(str)
-#             self.adata.obsm['emb'] = emb_max
-#             # self.adata.obsm['rec'] = rec1_max
-#             return self.adata.obsm['emb'], self.adata.obs['STMACL']
-#         else:
-#             for epoch in tqdm(range(self.epochs)):
-#                 self.model.train()
-#                 self.optimizer.zero_grad()
-#                 torch.set_grad_enabled(True)
-#                 # emb, rec, loss_rec, loss_lq, loss_zinb = self.model(self.X, self.adj, self.edge_index)
-#                 emb, rec, loss_rec, loss_adj = self.model(self.X, self.adj, self.edge_index)
-#
-#                 out = scale(emb)
-#                 out = F.normalize(out, p=2, dim=1)
-#                 loss_cos = cos(out, self.adj_mask, temperature=0.07)
-#                 # loss_tatal = self.rec_w * loss_rec + self.lq_w * loss_lq + self.zinb_w * loss_zinb + self.cos_w * loss_cos
-#                 loss_tatal = self.rec_w * loss_rec + self.adj_w * loss_adj + self.cos_w * loss_cos
-#
-#                 loss_tatal.backward()
-#                 self.optimizer.step()
-#                 list_rec.append(loss_rec.detach().cpu().numpy())
-#                 # list_lq.append(loss_lq.detach().cpu().numpy())
-#                 list_adj.append(loss_adj.detach().cpu().numpy())
-#                 list_cos.append(loss_cos.detach().cpu().numpy())
-#                 print('loss_rec = {:.5f}'.format(loss_rec), #'loss_lq = {:.5f}'.format(loss_lq),
-#                       'loss_cos= {:.5f}'.format(loss_cos), 'loss_adj= {:.5f}'.format(loss_adj),
-#                       ' loss_total = {:.5f}'.format(loss_tatal))
-#             return emb# #rec
-#
-#     def model_eval(self):
-#         self.model.eval()
-#         # emb, rec, loss_rec, loss_lq, loss_zinb = self.model(self.X, self.adj, self.edge_index)
-#         emb, rec, loss_rec, loss_adj = self.model(self.X, self.adj, self.edge_index)
-#         emb = emb.data.cpu().numpy()
-#         rec = rec.data.cpu().numpy()
-#         loss_rec = loss_rec.data.cpu().numpy()
-#         # loss_lq = loss_lq.data.cpu().numpy()
-#         loss_adj = loss_adj.data.cpu().numpy()
-#         # return emb, rec, loss_rec, loss_lq, loss_zinb
-#         return emb, rec, loss_rec, loss_adj
-
-
 class stmacl:
     def __init__(
             self,
@@ -281,7 +107,7 @@ class stmacl:
 
         self.device = device
         self.dec_tol = dec_tol
-        self.threshold = threshold #高置信度的阈值
+        self.threshold = threshold 
 
         self.adata = adata.copy()
         self.dataset = dataset
@@ -326,7 +152,7 @@ class stmacl:
         idx_max = []
         emb_max = []
 
-        if self.dataset in ['Human_Breast_Cancer', 'DLPFC', 'Mouse_Brain_Anterior_Section1']:
+        if self.dataset in ['DLPFC']:
             for epoch in tqdm(range(self.epochs)):
                 self.model.train()
                 self.optimizer.zero_grad()
@@ -357,15 +183,6 @@ class stmacl:
                 loss_tatal.backward()
                 self.optimizer.step()
 
-                # list_rec.append(loss_rec.detach().cpu().numpy())
-                # list_dcrn.append(loss_dcrn.detach().cpu().numpy())
-                # list_adj.append(loss_adj.detach().cpu().numpy())
-                # list_cos.append(loss_cos.detach().cpu().numpy())
-                # list_kl.append(loss_kl.detach().cpu().numpy())
-                # print('loss_rec = {:.4f}'.format(loss_rec), 'loss_dcrn = {:.4f}'.format(loss_dcrn),
-                #       'loss_adj= {:.4f}'.format(loss_adj), 'loss_cos = {:.4f}'.format(loss_cos),
-                #       'loss_kl = {:.4f}'.format(loss_kl), ' loss_total = {:.5f}'.format(loss_tatal))
-                # # emb, _, _, _, _ = self.model_eval()
                 emb, _, _, _, _, _ = self.model_eval()
                 kmeans = KMeans(n_clusters=self.n_clusters).fit(emb)
                 idx = kmeans.labels_
@@ -383,15 +200,6 @@ class stmacl:
                     idx_max = idx
                     emb_max = emb
                     rec1_max = rec
-
-            # import matplotlib.pyplot as plt
-            # fig, ax = plt.subplots()
-            # ax.plot(list_rec, label='rec')
-            # # ax.plot(list_cos, label='cos')
-            # ax.plot(list_adj, label='adj')
-            # ax.plot(list_dcrn, label='dcrn')
-            # ax.legend()
-            # plt.show()
 
             print("epoch_max", epoch_max)
             print("ARI=======", ari_max)
@@ -433,22 +241,11 @@ class stmacl:
 
                 loss_tatal.backward()
                 self.optimizer.step()
-                # list_rec1.append(loss_rec1.detach().cpu().numpy())
-                # list_rec2.append(loss_rec2.detach().cpu().numpy())
-                # list_dcrn.append(loss_dcrn.detach().cpu().numpy())
-                # list_adj.append(loss_adj.detach().cpu().numpy())
-                # list_cos.append(loss_cos.detach().cpu().numpy())
-                # list_kl.append(loss_kl.detach().cpu().numpy())
-                #
-                # print('loss_rec1 = {:.5f}'.format(loss_rec1), 'loss_rec2 = {:.5f}'.format(loss_rec2),
-                #       'loss_dcrn = {:.5f}'.format(loss_dcrn), 'loss_cos= {:.5f}'.format(loss_cos),
-                #       'loss_adj= {:.5f}'.format(loss_adj), 'loss_kl= {:.5f}'.format(loss_kl),
-                #       ' loss_total = {:.5f}'.format(loss_tatal))
+
             return emb# #rec
 
     def model_eval(self):
         self.model.eval()
-        # emb, rec, loss_rec, loss_lq, loss_zinb = self.model(self.X, self.adj, self.edge_index)
         emb, rec, q, loss_rec, loss_adj, loss_icr = self.model(self.X, self.adj, self.edge_index)
         emb = emb.data.cpu().numpy()
         rec = rec.data.cpu().numpy()
