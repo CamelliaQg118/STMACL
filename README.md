@@ -4,9 +4,8 @@ An official source code for the paper "Integrating modularity maximization and c
 ![Figure_1](https://github.com/user-attachments/assets/b19d0837-92dd-49e6-87f1-06420cf6eb77)
 
 
-STMCCL, a novel self-supervised learning framework that jointly trains a masked autoencoder and cluster-guided contrastive learning. STMCCL has been applied to seven spatial transcriptomics datasets across platforms like 10X Visium, Stereo-seq, and Slide-seqV2, proving its capability to deliver enhanced representations for a range of downstream analyses, such as clustering, visualization, trajectory inference, and differential gene analysis.
+STMACL, a self-supervised learning framework, combines modularity maximization and contrastive learning for spatial clustering. STMACL has been applied to seven spatial transcriptomics datasets across platforms like omsFISH, STARmap,10X Visium, Stereo-seq, and Slide-seqV2, proving its capability to deliver enhanced representations for a range of downstream analyses, such as clustering, visualization, trajectory inference, and differential gene analysis.
 
-The complete code will be made available after the article is published.
 __STMACL__
 
 ## Requirements:
