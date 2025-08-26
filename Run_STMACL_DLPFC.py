@@ -41,8 +41,8 @@ print("adata", adata)
 df_meta = pd.read_csv(file_fold + '/metadata.tsv', sep='\t')
 adata = utils.label_process_DLPFC(adata, df_meta)
 
-savepath = '../Result/refer/DLPFC_gin/' + str(slice) + '/'
-# savepath = '../Result/refer/DLPFC_gin/' + str(slice)
+savepath = '../Result/refer/DLPFC/' + str(slice) + '/'
+
 
 if not os.path.exists(savepath):
     os.mkdir(savepath)
@@ -81,7 +81,7 @@ else:
     adata.obs['STMACL'] = idx
     adata.obs['ground_truth'] = df_meta['layer_guess']
     adata = adata[~pd.isnull(adata.obs['ground_truth'])]
-#####################################################################normal
+
 print("adata", adata)
 new_type = utils.refine_label(adata, radius=10, key='STMACL')
 adata.obs['STMACL'] = new_type
@@ -138,3 +138,4 @@ plt.savefig(savepath + 'STMACL_PAGA_domain.tif', bbox_inches='tight', dpi=300)
 sc.tl.paga(adata, groups='ground_truth')
 sc.pl.paga_compare(adata, legend_fontsize=10, frameon=False, size=20, title=title, legend_fontoutline=2, show=False)
 plt.savefig(savepath + 'STMACL_PAGA_ground_truth.png', bbox_inches='tight', dpi=300)
+
