@@ -26,33 +26,33 @@ class GCN(nn.Module):
 
     def forward(self, x, adj):
         x = F.relu(self.gc1(x, adj))
-        # x = nn.PReLU()(self.gc1(x, adj))    #####################################后续试试
+        # x = nn.PReLU()(self.gc1(x, adj)) 
         x = F.dropout(x, self.dropout, training=self.training)
         x = self.gc2(x, adj)
         return x
 
 
-class ZINB_decoder(torch.nn.Module):#解码器
+class ZINB_decoder(torch.nn.Module):
     def __init__(self, nfeat, nhid1, nhid2):
         super(ZINB_decoder, self).__init__()
         self.decoder = torch.nn.Sequential(
-            torch.nn.Linear(nhid2, nhid1),#64到128
+            torch.nn.Linear(nhid2, nhid1),
             torch.nn.BatchNorm1d(nhid1),
             torch.nn.ELU()
-        )#初始化参数
-        self.pi = torch.nn.Linear(nhid1, nfeat)#128到3000
+        )
+        self.pi = torch.nn.Linear(nhid1, nfeat)
         self.disp = torch.nn.Linear(nhid1, nfeat)
-        self.mean = torch.nn.Linear(nhid1, nfeat)#用用三个新型层实现ZINB的三个参数
+        self.mean = torch.nn.Linear(nhid1, nfeat)
         self.DispAct = lambda x: torch.clamp(F.softplus(x), 1e-4, 1e4)
         self.MeanAct = lambda x: torch.clamp(torch.exp(x), 1e-5, 1e6)
 
     def forward(self, emb):
         x = self.decoder(emb)
         print("X", x)
-        pi = torch.sigmoid(self.pi(x))#对X解码后的结果非线性激活
+        pi = torch.sigmoid(self.pi(x))
         disp = self.DispAct(self.disp(x))
         mean = self.MeanAct(self.mean(x))
-        return [pi, disp, mean]#将三个低维嵌入经过激活后的数据进行整合用于计算损失结果
+        return [pi, disp, mean]
 
 
 def _nan2inf(x):
@@ -113,22 +113,21 @@ class EdgeDecoder(nn.Module):
 def zinb_loss(y_true, y_pred, theta, pi, scale_factor=1.0, ridge_lambda=0.0, eps=1e-10, mean=True):
 
     theta = torch.minimum(theta, torch.tensor(1e6))
-    # 计算 NB 部分损失
+
     y_pred = y_pred * scale_factor
     t1 = torch.lgamma(theta + eps) + torch.lgamma(y_true + 1.0) - torch.lgamma(y_true + theta + eps)
     t2 = (theta + y_true) * torch.log(1.0 + (y_pred / (theta + eps))) + (
             y_true * (torch.log(theta + eps) - torch.log(y_pred + eps)))
     nb_loss = t1 + t2
 
-    if pi is None:  # 只计算 NB 损失
+    if pi is None:  
         loss = nb_loss
-    else:  # 计算 ZINB 损失
+    else:  
         nb_case = nb_loss - torch.log(1.0 - pi + eps)
         zero_nb = torch.pow(theta / (theta + y_pred + eps), theta)
         zero_case = -torch.log(pi + ((1.0 - pi) * zero_nb) + eps)
         loss = torch.where(torch.lt(y_true, 1e-8), zero_case, nb_case)
-
-        # 添加正则化项
+        
         ridge = ridge_lambda * torch.square(pi)
         loss += ridge
 
@@ -188,39 +187,27 @@ def get_negative_expectation(q_samples, measure, average=True):
 
 def local_global_loss(l_enc, g_enc, measure):
 
-    num_nodes = l_enc.shape[0]  # 总节点数
+    num_nodes = l_enc.shape[0]  
+    pos_mask = torch.eye(num_nodes).cuda()  
+    neg_mask = 1 - pos_mask 
 
-    # 创建掩码矩阵
-    pos_mask = torch.eye(num_nodes).cuda()  # 对角线为1，每个节点只与自己匹配
-    neg_mask = 1 - pos_mask  # 其他节点均为负样本
-
-    # 计算点积相似性
     if g_enc.dim() == 1:
         g_enc = g_enc.unsqueeze(0)
     res = torch.mm(l_enc, g_enc.T)  # (N, 1)
 
-    # 计算正样本和负样本的期望
     E_pos = get_positive_expectation(res * pos_mask, measure, average=False).sum()
-    E_pos = E_pos / num_nodes  # 计算均值
+    E_pos = E_pos / num_nodes  
 
     E_neg = get_negative_expectation(res * neg_mask, measure, average=False).sum()
-    E_neg = E_neg / (num_nodes * (num_nodes - 1))  # 计算均值
+    E_neg = E_neg / (num_nodes * (num_nodes - 1)) 
 
     return E_neg - E_pos
 
 
-# def edge_rec_loss(edge, edge_rec):
-#     loss_fn = torch.nn.BCEWithLogitsLoss()
-#     pos_loss = loss_fn(edge, torch.ones_like(edge))  # 真实边应该接近 1
-#     neg_loss = loss_fn(edge_rec, torch.zeros_like(edge_rec))  # 负样本应该接近 0
-#     loss = pos_loss + neg_loss  # 总损失
-#     return loss
+def bcn_loss(out1, out2):
+    loss = F.binary_cross_entropy(out1.sigmoid(), torch.ones_like(out2))
 
-
-def bcn_loss(out1, out2):#损失函数
-    loss_1 = F.binary_cross_entropy(out1.sigmoid(), torch.ones_like(out2))
-    # loss_2 = F.binary_cross_entropy(out2.sigmoid(), torch.zeros_like(out2))
-    return loss_1
+    return loss
 
 
 class Attention(nn.Module):
@@ -234,13 +221,11 @@ class Attention(nn.Module):
         )
 
     def forward(self, z):
-        # print("Z的维度", z.size())
+
         w = self.project(z)
         beta = torch.softmax(w, dim=1)
-        return (beta * z).sum(1), beta# beta注意力权重矩阵，(beta * z).sum(1)全局表示
-
-    """STMGCN和SpatialMGCN前向传播部分代码上是一样的，但是实施的细节不同，因为project不同"""
-
+        return (beta * z).sum(1), beta
+        
 
 class stmacl_module(nn.Module):
     def __init__(
@@ -266,7 +251,7 @@ class stmacl_module(nn.Module):
             remask_rate=0.8,
             edmask_rate=0.7,
             device='cuda:0'
-    ):#隐藏层维度
+    ):
         super(stmacl_module, self).__init__()
         self.device = device
         self.adj_dim = adj.shape[0]
@@ -310,12 +295,12 @@ class stmacl_module(nn.Module):
         self.beta = beta
         self.drop_edge_rate = drop_edge_rate
         self.mask_rate = mask_rate
-        self.remask_rate = remask_rate  ###感觉仍然很高
+        self.remask_rate = remask_rate  
         self.edmask_rate = edmask_rate
         self.cluster_layer = Parameter(torch.Tensor(self.nclass,  output_dim))
 
         self.loss_type1 = self.setup_loss_fn(loss_fn='sce', alpha_l=3)
-        # self.loss_type2 = self.setup_loss_fn(loss_fn='zinb')
+
         self.loss_type2 = self.setup_loss_fn(loss_fn='sce', alpha_l=3)
         self.loss_type3 = self.setup_loss_fn(loss_fn='bcn')
 
@@ -344,142 +329,42 @@ class stmacl_module(nn.Module):
         nn.init.xavier_normal_(self.enc_mask_token)
         nn.init.xavier_normal_(self.dec_mask_token)
 
-    # def forward(self, X, adj, edge_index):
-    #     #特征处理
-    #     adj, Xmask, (mask_nodes, keep_nodes) = self.encoding_mask_noise(adj, X, self.mask_rate)
-    #     Zf = self.encoder(Xmask)
-    #     Xgau= self.gaussian_noised_feature(X)
-    #     # print("Zf_size", Zf.size())
-    #     # print("Xgau_size", Xgau.size())
-    #     # print("adj_size", adj.size())
-    #     #邻接矩阵处理
-    #     edge_drop = dropout_edge(edge_index, self.drop_edge_rate)#某种程度上说也是mask
-    #     # neg_edges = self.negative_sampler(
-    #     #     edge_index,
-    #     #     num_nodes=X.shape[0],
-    #     #     num_neg_samples=edge_drop.view(2, -1).size(1),
-    #     # ).view_as(edge_drop)  # 负样例
-    #
-    #     # edge_remain, edge_mask = self.mask_edge(edge_index, self.edmask_rate)
-    #     num_nodes = adj.shape[0]
-    #     adj_drop = edge_index_to_sparse_adj(edge_drop, num_nodes, device='cuda')
-    #     adj_diff = utils.diffusion_adj(adj, mode="ppr", transport_rate=self.alpha_value)
-    #
-    #     #嵌入学习
-    #     Gf1 = self.encode_edge(Xmask, adj_drop)
-    #     Gf2 = self.encode_edge(Xgau, adj_diff)
-    #     H = self.encode_latent(Zf, adj)
-    #     # print("adj_drop_size", adj_drop.size())
-    #     # print("adj_diff_size", adj_diff.size())
-    #     # Gf1, Gf1_pool, Gf1_local, Gf1_golbal = self.pool_mlp(Xgau, adj_drop)
-    #     # Gf2, Gf2_pool, Gf2_local, Gf2_golbal = self.pool_mlp(Xmask, adj_diff)
-    #     # H = self.encode_latent(Zf, adj)
-    #
-    #     #特征融合
-    #     emb = torch.cat([H, Gf1, Gf2], dim=1).to(self.device)
-    #     # print("emb.size", emb.size())
-    #     # print("emb", emb)
-    #     linear = nn.Linear(self.emb_dim, self.output_dim).to(self.device)
-    #     emb = linear(emb).to(self.device)
-    #
-    #     #计算重构损失（X）
-    #     H = H.clone()
-    #     H_rec, _, _ = self.random_remask(adj, H, self.remask_rate)#进行重掩码
-    #     rec = self.decoder(H_rec, adj)#解码器重建输入，即生成Z
-    #     x_init = X[mask_nodes]
-    #     x_rec = rec[mask_nodes]
-    #     loss_rec1 = self.loss_type1(x_init, x_rec)
-    #
-    #     #对总损失潜在表示
-    #     emb_re = H.clone()
-    #     with torch.no_grad():
-    #         X_target = self.encode_generate(X, adj)
-    #         x_target = self.projector_generate(X_target[keep_nodes])
-    #     X_pred = self.projector(emb_re[keep_nodes])
-    #     x_pred = self.predictor(X_pred)
-    #     loss_rec2 = self.loss_type1(x_pred, x_target)
-    #     loss_rec = loss_rec1 +loss_rec2
-    #
-    #     #计算重构损失（A）
-    #     adj_rec1 = self.decoder(Gf1, adj)#输入为嵌入和，掩码（删除）掉的矩阵
-    #     adj_rec2 = self.decoder(Gf2, adj)
-    #     loss_adj1 = self.loss_type3(rec, adj_rec1)
-    #     loss_adj2 = self.loss_type3(rec, adj_rec2)
-    #     loss_adj = loss_adj1 + loss_adj2
-    #
-    #     # #计算全局-局部损失
-    #     # Gf1_local = Gf1_local.view(adj.shape[0], -1)
-    #     # Gf2_local = Gf2_local.view(adj.shape[0], -1)
-    #     # batch = torch.zeros(adj.shape[0], dtype=torch.long).cuda()  # 所有节点的批次标识为 0
-    #     # loss1 = self.loss_type3(Gf1_local, Gf1_golbal, 'JSD')  # 无需掩码
-    #     # loss2 = self.loss_type3(Gf2_local, Gf2_golbal, 'JSD')
-    #     # loss_lg = loss1 + loss2
-    #
-    #     #### ZINB解码器计算全局损失，效果不好
-    #     # [pi, disp, mean] = self.ZINB_decoder(emb)
-    #     # print("pi", pi)
-    #     # print("disp", disp)
-    #     # print("mean", mean)
-    #     # loss_zinb = self.loss_type2(X, mean, theta=disp, pi=pi, scale_factor=1.0, eps=1e-10, ridge_lambda=0.0, mean=True)
-    #
-    #     # return emb, rec, loss_rec, loss_lg, loss_zinb
-    #     return emb, rec, loss_rec, loss_adj
-
+   
     def forward(self, X, adj, edge_index):
-        # 特征处理
+        # feature matrix
         adj, Xmask, (mask_nodes, keep_nodes) = self.encoding_mask_noise(adj, X, self.mask_rate)
         Zmask = self.encoder(Xmask)
         Xgau = self.gaussian_noised_feature(X)
         Zgau = self.encoder(Xgau)
 
-        # 邻接矩阵处理
-        edge_drop = dropout_edge(edge_index, self.drop_edge_rate)  # 某种程度上说也是mask
+        # adjacency matrix
+        edge_drop = dropout_edge(edge_index, self.drop_edge_rate) 
         num_nodes = adj.shape[0]
         adj_drop = edge_index_to_sparse_adj(edge_drop, num_nodes, device='cuda')
         adj_diff = utils.diffusion_adj(adj, mode="ppr", transport_rate=self.beta)
 
-        # 嵌入学习
+        # embedding learning
         Gf1 = self.encode_edge(Xmask, adj_drop)
         Gf2 = self.encode_edge(Xgau, adj_diff)
         H = self.encode_latent(Zmask, adj)
         # H2 = self.encode_latent(Zgau, adj)
 
-        #簇级,DCRN损失
-        # Zen_mask = self.R(Zmask)
-        # Zen_gau = self.R(Zgau)
-        # Zgnn_1  = self.R(Gf1)
-        # Zgnn_2 = self.R(Gf2)
-        # Z_en_all = [Zmask, Zgau, Zen_mask, Zen_gau]
-        # Z_gnn_all = [Gf1, Gf2, Zgnn_1, Zgnn_2]
-        # loss_dcrn = dicr_loss(Z_en_all, Z_gnn_all)
-        loss_icr = dicr_loss(Gf1, Gf2)
-
-
-        # 特征融合
+        # embedding fusing
         emb = torch.cat([H, Gf1, Gf2, Zmask], dim=1).to(self.device)
         linear = nn.Linear(self.emb_dim, self.output_dim).to(self.device)
         emb = linear(emb).to(self.device)
+        loss_icr = dicr_loss(Gf1, Gf2)
 
-        # 计算重构损失（X）
+        # rec_loss
         H = H.clone()
-        H_rec, _, _ = self.random_remask(adj, H, self.remask_rate)  # 进行重掩码
-        rec = self.decoder(H_rec, adj)  # 解码器重建输入，即生成Z
+        H_rec, _, _ = self.random_remask(adj, H, self.remask_rate)  
+        rec = self.decoder(H_rec, adj)  
         x_init = X[mask_nodes]
         x_rec = rec[mask_nodes]
         loss_rec = self.loss_type1(x_init, x_rec)
 
-        # # 对总损失潜在表示
-        # emb_re = emb.clone()
-        # with torch.no_grad():
-        #     X_target = self.encode_generate(X, adj)
-        #     x_target = self.projector_generate(X_target[keep_nodes])
-        # X_pred = self.projector(emb_re[keep_nodes])
-        # x_pred = self.predictor(X_pred)
-        # loss_de = self.loss_type1(x_pred, x_target)
-        # # loss_rec = loss_rec1 + loss_rec2
-
-        # 计算重构损失（A）
-        adj_rec1 = self.decoder(Gf1, adj_drop)  # 输入为嵌入和，掩码（删除）掉的矩阵
+        # adj_loss
+        adj_rec1 = self.decoder(Gf1, adj_drop)  
         adj_rec2 = self.decoder(Gf2, adj_diff)
         loss_adj1 = self.loss_type1(rec, adj_rec1)
         loss_adj2 = self.loss_type1(rec, adj_rec2)
@@ -489,8 +374,7 @@ class stmacl_module(nn.Module):
         q = 1.0 / ((1.0 + torch.sum((emb.unsqueeze(1) - self.cluster_layer) ** 2, dim=2) / self.alpha))
         q = q.pow((self.alpha + 1.0) / 2.0)
         q = q ** (self.alpha + 1.0) / 2.0
-        q = q / torch.sum(q, dim=1, keepdim=True)  # 便于损失计算
-        # print("q的值", q)
+        q = q / torch.sum(q, dim=1, keepdim=True)  
 
         return emb, rec, q, loss_rec, loss_adj, loss_icr
 
@@ -742,4 +626,5 @@ def correlation_reduction_loss(S):
 def off_diagonal(x):
     n, m = x.shape
     assert n == m
+
     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
