@@ -49,9 +49,6 @@ if not os.path.exists(savepath):
 n_clusters = 5 if slice in ['151669', '151670', '151671', '151672'] else 7
 
 adata, adj, edge_index, adj_mask = utils.graph_build(adata, adata_X, dataset)
-
-
-
 stmacl_net = STMACL.stmacl(adata.obsm['X_pca'], adata, adj, edge_index, adj_mask, n_clusters, dataset, device=device)
 
 tool = None
@@ -106,7 +103,7 @@ fig, axes = plt.subplots(1, 2, figsize=(4 * 2, 4))
 sc.pl.spatial(adata, color='ground_truth', ax=axes[0], show=False)
 sc.pl.spatial(adata, color=['STMACL'], ax=axes[1], show=False)
 axes[0].set_title("Manual annotation ("+ slice + ")")
-axes[1].set_title('ARI=%.4f, NMI=%.4f, acc=%.4f, f1=%.4f' % (ARI, NMI, acc, f1))
+axes[1].set_title('ARI=%.4f, NMI=%.4f' % (ARI, NMI))
 
 plt.subplots_adjust(wspace=0.5) 
 plt.subplots_adjust(hspace=0.5)  
@@ -137,5 +134,6 @@ plt.savefig(savepath + 'STMACL_PAGA_domain.tif', bbox_inches='tight', dpi=300)
 sc.tl.paga(adata, groups='ground_truth')
 sc.pl.paga_compare(adata, legend_fontsize=10, frameon=False, size=20, title=title, legend_fontoutline=2, show=False)
 plt.savefig(savepath + 'STMACL_PAGA_ground_truth.png', bbox_inches='tight', dpi=300)
+
 
 
