@@ -117,7 +117,7 @@ def label_process_DLPFC(adata, df_meta):
 
 
 def graph_build(adata, adata_X, dataset):
-    if dataset == 'DLPFC_gin':
+    if dataset == 'DLPFC':
         n = 12
         adj, edge_index = load_adj(adata, n)
         adj_mask = load_adj_mask(adata, edge_index)
