@@ -75,7 +75,7 @@ elif tool == 'louvain':
     STMACL.louvain(adata, n_clusters, use_rep='STMACL', key_added='STMACL', random_seed=random_seed)
 else:
     # emb, idx = stmacl_net.train()
-    emb, idx, acc, f1 = stmacl_net.train()
+    emb, idx = stmacl_net.train()
     print("emb", emb)
     adata.obsm['STMACL'] = emb
     adata.obs['STMACL'] = idx
@@ -89,8 +89,7 @@ ARI = metrics.adjusted_rand_score(adata.obs['ground_truth'], adata.obs['STMACL']
 NMI = metrics.normalized_mutual_info_score(adata.obs['ground_truth'], adata.obs['STMACL'])
 adata.uns["ARI"] = ARI
 adata.uns["NMI"] = NMI
-adata.uns["acc"] = acc
-adata.uns["f1"] = f1
+
 print('===== Project: {}_{} ARI score: {:.4f}'.format(str(dataset), str(slice), ARI))
 print('===== Project: {}_{} NMI score: {:.4f}'.format(str(dataset), str(slice), NMI))
 print(str(slice))
@@ -125,8 +124,8 @@ plt.subplots_adjust(wspace=0.5)
 plt.subplots_adjust(hspace=0.5)
 
 
-title = 'STMACL:{}_{} ARI={:.4f} NMI={:.4f} acc={:.4f} f1={:.4f}'.format(str(dataset), str(slice), adata.uns['ARI'],
-                                                                         adata.uns['NMI'], adata.uns['acc'], adata.uns['f1'])
+title = 'STMACL:{}_{} ARI={:.4f} NMI={:.4f} '.format(str(dataset), str(slice), adata.uns['ARI'],
+                                                                         adata.uns['NMI'])
 sc.pl.spatial(adata, img_key="hires", color=['STMACL'], title=title, show=False)
 plt.savefig(savepath + 'STMACL_NMI_ARI_acc_f1.tif', bbox_inches='tight', dpi=300)
 
@@ -138,4 +137,5 @@ plt.savefig(savepath + 'STMACL_PAGA_domain.tif', bbox_inches='tight', dpi=300)
 sc.tl.paga(adata, groups='ground_truth')
 sc.pl.paga_compare(adata, legend_fontsize=10, frameon=False, size=20, title=title, legend_fontoutline=2, show=False)
 plt.savefig(savepath + 'STMACL_PAGA_ground_truth.png', bbox_inches='tight', dpi=300)
+
 
