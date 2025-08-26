@@ -1,6 +1,7 @@
 from functools import partial
 import layers
 import utils
+from torch_geometric.utils import negative_sampling
 import numpy as np
 import torch.backends.cudnn as cudnn
 from STMACL.layers import *
@@ -9,6 +10,7 @@ cudnn.benchmark = True
 
 
 def sce_loss(x, y, alpha=3):
+
     x = F.normalize(x, p=2, dim=-1)
     y = F.normalize(y, p=2, dim=-1)
     loss = (1 - (x * y).sum(dim=-1)).pow_(alpha)
@@ -26,7 +28,7 @@ class GCN(nn.Module):
 
     def forward(self, x, adj):
         x = F.relu(self.gc1(x, adj))
-        # x = nn.PReLU()(self.gc1(x, adj)) 
+        # x = nn.PReLU()(self.gc1(x, adj))  
         x = F.dropout(x, self.dropout, training=self.training)
         x = self.gc2(x, adj)
         return x
@@ -127,7 +129,7 @@ def zinb_loss(y_true, y_pred, theta, pi, scale_factor=1.0, ridge_lambda=0.0, eps
         zero_nb = torch.pow(theta / (theta + y_pred + eps), theta)
         zero_case = -torch.log(pi + ((1.0 - pi) * zero_nb) + eps)
         loss = torch.where(torch.lt(y_true, 1e-8), zero_case, nb_case)
-        
+
         ridge = ridge_lambda * torch.square(pi)
         loss += ridge
 
@@ -189,24 +191,22 @@ def local_global_loss(l_enc, g_enc, measure):
 
     num_nodes = l_enc.shape[0]  
     pos_mask = torch.eye(num_nodes).cuda()  
-    neg_mask = 1 - pos_mask 
+    neg_mask = 1 - pos_mask  
 
     if g_enc.dim() == 1:
         g_enc = g_enc.unsqueeze(0)
-    res = torch.mm(l_enc, g_enc.T)  # (N, 1)
-
+    res = torch.mm(l_enc, g_enc.T)  
+    
     E_pos = get_positive_expectation(res * pos_mask, measure, average=False).sum()
-    E_pos = E_pos / num_nodes  
-
+    E_pos = E_pos / num_nodes 
     E_neg = get_negative_expectation(res * neg_mask, measure, average=False).sum()
-    E_neg = E_neg / (num_nodes * (num_nodes - 1)) 
+    E_neg = E_neg / (num_nodes * (num_nodes - 1))  
 
     return E_neg - E_pos
 
 
 def bcn_loss(out1, out2):
     loss = F.binary_cross_entropy(out1.sigmoid(), torch.ones_like(out2))
-
     return loss
 
 
@@ -295,7 +295,7 @@ class stmacl_module(nn.Module):
         self.beta = beta
         self.drop_edge_rate = drop_edge_rate
         self.mask_rate = mask_rate
-        self.remask_rate = remask_rate  
+        self.remask_rate = remask_rate 
         self.edmask_rate = edmask_rate
         self.cluster_layer = Parameter(torch.Tensor(self.nclass,  output_dim))
 
@@ -311,7 +311,8 @@ class stmacl_module(nn.Module):
         self.pool_mlp = pool_mlp(self.pm_indim, self.pm_latentdim, self.pm_outdim, self.adj_dim, self.num_layers)
         self.encode_latent = self.Code(self.g_type, self.el_indim, self.el_latentdim, self.el_outdim, self.dorp_code)
         self.decoder = self.Code(self.decode_type, self.dein_dim, self.deout_dim, self.input_dim, self.dorp_code)
-        # self.negative_sampler = negative_sampling
+        self.decoder1 = InnerProductDecoder(self.p_drop, act=lambda x: x)
+ 
         self.encode_generate = self.Code(self.eg_type, self.eg_indim, self.eg_latentdim, self.eg_outdim, self.dorp_code)
         self.projector_generate = nn.Sequential(nn.Linear(self.p_latent, self.train_dim),
                                                 nn.PReLU(), nn.Linear(self.train_dim, self.p_latent))
@@ -328,8 +329,8 @@ class stmacl_module(nn.Module):
     def reset_parameters_for_token(self):
         nn.init.xavier_normal_(self.enc_mask_token)
         nn.init.xavier_normal_(self.dec_mask_token)
+        
 
-   
     def forward(self, X, adj, edge_index):
         # feature matrix
         adj, Xmask, (mask_nodes, keep_nodes) = self.encoding_mask_noise(adj, X, self.mask_rate)
@@ -337,11 +338,13 @@ class stmacl_module(nn.Module):
         Xgau = self.gaussian_noised_feature(X)
         Zgau = self.encoder(Xgau)
 
-        # adjacency matrix
-        edge_drop = dropout_edge(edge_index, self.drop_edge_rate) 
+        #adjacency matrix
+        edge_drop = dropout_edge(edge_index, self.drop_edge_rate)  
         num_nodes = adj.shape[0]
         adj_drop = edge_index_to_sparse_adj(edge_drop, num_nodes, device='cuda')
         adj_diff = utils.diffusion_adj(adj, mode="ppr", transport_rate=self.beta)
+        # print("adj_diff", adj_diff)
+        # print("adj_drop", adj_drop)
 
         # embedding learning
         Gf1 = self.encode_edge(Xmask, adj_drop)
@@ -350,24 +353,25 @@ class stmacl_module(nn.Module):
         # H2 = self.encode_latent(Zgau, adj)
 
         # embedding fusing
-        emb = torch.cat([H, Gf1, Gf2, Zmask], dim=1).to(self.device)
+        emb = torch.cat([H, Gf1, Gf2], dim=1).to(self.device)
         linear = nn.Linear(self.emb_dim, self.output_dim).to(self.device)
         emb = linear(emb).to(self.device)
         loss_icr = dicr_loss(Gf1, Gf2)
 
         # rec_loss
         H = H.clone()
-        H_rec, _, _ = self.random_remask(adj, H, self.remask_rate)  
-        rec = self.decoder(H_rec, adj)  
+        H_rec, _, _ = self.random_remask(adj, H, self.remask_rate) 
+        rec = self.decoder(H_rec, adj) 
         x_init = X[mask_nodes]
         x_rec = rec[mask_nodes]
         loss_rec = self.loss_type1(x_init, x_rec)
 
-        # adj_loss
-        adj_rec1 = self.decoder(Gf1, adj_drop)  
-        adj_rec2 = self.decoder(Gf2, adj_diff)
-        loss_adj1 = self.loss_type1(rec, adj_rec1)
-        loss_adj2 = self.loss_type1(rec, adj_rec2)
+        #adj_rec
+        adj_rec1 = self.decoder1(Gf1, adj)  
+        adj_rec2 = self.decoder1(Gf2, adj)
+        adj_raw = adj.coalesce().values()
+        loss_adj1 = self.loss_type1(adj_raw, adj_rec1)
+        loss_adj2 = self.loss_type1(adj_raw, adj_rec2)
         loss_adj = loss_adj1 + loss_adj2
 
         #KL
@@ -376,7 +380,7 @@ class stmacl_module(nn.Module):
         q = q ** (self.alpha + 1.0) / 2.0
         q = q / torch.sum(q, dim=1, keepdim=True)  
 
-        return emb, rec, q, loss_rec, loss_adj, loss_icr
+        return emb, rec, q, loss_rec, loss_de, loss_adj, loss_icr
 
     def setup_loss_fn(self, loss_fn, alpha_l=3):
         if loss_fn == "mse":
@@ -427,10 +431,10 @@ class stmacl_module(nn.Module):
     def mask_edge(self, edge_index, edmaask_rate = 0.7):
         e_ids = torch.arange(edge_index.size(1), dtype=torch.long, device=edge_index.device)
         mask = torch.full_like(e_ids, edmaask_rate, dtype=torch.float32)
-        mask = torch.bernoulli(mask).to(torch.bool)  # 按照 p 进行随机采样
+        mask = torch.bernoulli(mask).to(torch.bool)  
 
-        remaining_edges = edge_index[:, ~mask]  # 选取未被掩码的边
-        masked_edges = edge_index[:, mask]  # 选取被掩码的边
+        remaining_edges = edge_index[:, ~mask]  
+        masked_edges = edge_index[:, mask]  
 
         return remaining_edges, masked_edges
 
@@ -471,20 +475,20 @@ class Encodeer_Model(nn.Module):
 
 
 def dropout_edge(edge_index, p=0.5, force_undirected=False):
-    if p < 0. or p > 1.:#检查边的取值范围
+    if p < 0. or p > 1.:
         raise ValueError(f'Dropout probability has to be between 0 and 1 '
                          f'(got {p}')
 
-    row, col = edge_index#将这个数组的值一个维和第二维赋值给左边两个变量
+    row, col = edge_index
 
-    edge_mask = torch.rand(row.size(0), device=edge_index.device) >= p#生成与边数相同的随机数，
+    edge_mask = torch.rand(row.size(0), device=edge_index.device) >= p
 
-    if force_undirected:#是否强制保持图为无向图，确保便是无向的，为false则说明保持原状，之前是有向图则还是有向的，之前无向则还是无向图
+    if force_undirected:
         edge_mask[row > col] = False
 
-    edge_index = edge_index[:, edge_mask]#生成新的边索引矩阵
+    edge_index = edge_index[:, edge_mask]
 
-    if force_undirected:#如果保持为无向图，则将每条边翻转
+    if force_undirected:
         edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)
 
     return edge_index
@@ -499,7 +503,7 @@ class pool_mlp(nn.Module):
         # print("adj_dim", adj_dim)
         self.layers.append(layers.GraphConvolution(input_dim, latent_dim).cuda())
         for __ in range(num_layers - 1):
-            self.layers.append(layers.GraphConvolution(latent_dim, out_dim).cuda())#普通的GCN卷积
+            self.layers.append(layers.GraphConvolution(latent_dim, out_dim).cuda())
         self.ffn1 = nn.Sequential(
             nn.Linear(out_dim, latent_dim),
             nn.PReLU(),
@@ -521,14 +525,14 @@ class pool_mlp(nn.Module):
         self.linear_shortcut2 = nn.Linear(self.num_layers * self.adj_dim, out_dim)
 
 
-    def forward(self, feat, adj):#没有对掩码进行处理的操作
+    def forward(self, feat, adj):
         Gf = self.layers[0](feat, adj)
         # print("Gf", Gf.size())
-        Gf_pool = torch.sum(Gf, 1)#求和，得到N个节点的聚合特征，每行求和
+        Gf_pool = torch.sum(Gf, 1)
         # print("Gf_pool", Gf_pool.size())
         for idx in range(self.num_layers - 1):
             Gf = self.layers[idx + 1](Gf, adj)
-            Gf_pool = torch.cat((Gf_pool, torch.sum(Gf, 1)), -1)#特征融合，再次求和获取节点信息
+            Gf_pool = torch.cat((Gf_pool, torch.sum(Gf, 1)), -1)
         # print("Gf1", Gf.size())
         # print("Gf_pool1", Gf_pool.size())
         Gf_mlp = self.ffn1(Gf) + self.linear_shortcut1(Gf)
@@ -539,7 +543,7 @@ class pool_mlp(nn.Module):
 
 
 def edge_index_to_sparse_adj(edge_index, num_nodes, device='cuda'):
-    edge_weight = torch.ones(edge_index.size(1), device=device)  # 边权重默认为 1
+    edge_weight = torch.ones(edge_index.size(1), device=device) 
     adj = torch.sparse_coo_tensor(
         indices=edge_index,
         values=edge_weight,
@@ -549,7 +553,7 @@ def edge_index_to_sparse_adj(edge_index, num_nodes, device='cuda'):
     return adj
 
 
-class Readout(nn.Module):#读出函数
+class Readout(nn.Module):
     def __init__(self, K):
         super(Readout, self).__init__()
         self.K = K
@@ -577,9 +581,9 @@ class Readout(nn.Module):#读出函数
 def dicr_loss1(Z_ae, Z_igae):
     # Sample-level Correlation Reduction (SCR)
     # cross-view sample correlation matrix
-    S_N_ae = cross_correlation(Z_ae[0], Z_ae[1])#节点级（最开始的输入为X处理的）
-    S_N_igae = cross_correlation(Z_igae[0], Z_igae[1])#节点级（最开始的输入为X,A经过增强的）
-    # loss of SCR（样例水平相关性减少）
+    S_N_ae = cross_correlation(Z_ae[0], Z_ae[1])
+    S_N_igae = cross_correlation(Z_igae[0], Z_igae[1])
+    # loss of SCR
     L_N_ae = correlation_reduction_loss(S_N_ae)
     L_N_igae = correlation_reduction_loss(S_N_igae)
 
@@ -588,7 +592,7 @@ def dicr_loss1(Z_ae, Z_igae):
     S_F_ae = cross_correlation(Z_ae[2].t(), Z_ae[3].t())
     S_F_igae = cross_correlation(Z_igae[2].t(), Z_igae[3].t())
 
-    # loss of FCR（特征水平相关性减少）
+    # loss of FCR
     L_F_ae = correlation_reduction_loss(S_F_ae)
     L_F_igae = correlation_reduction_loss(S_F_igae)
 
@@ -615,7 +619,7 @@ def dicr_loss(com1, com2):
 
 def cross_correlation(Z_v1, Z_v2):
 
-    return torch.mm(F.normalize(Z_v1, dim=1), F.normalize(Z_v2, dim=1).t())#计算不同视图相关性矩阵，S[i, j] 表示 Z_v1[i] 和 Z_v2[j] 之间的余弦相似度。
+    return torch.mm(F.normalize(Z_v1, dim=1), F.normalize(Z_v2, dim=1).t())
 
 
 def correlation_reduction_loss(S):
@@ -626,5 +630,22 @@ def correlation_reduction_loss(S):
 def off_diagonal(x):
     n, m = x.shape
     assert n == m
-
     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+
+class InnerProductDecoder(nn.Module):
+    """Decoder for using inner product for prediction."""
+
+    def __init__(self, dropout, act=torch.sigmoid):
+        super(InnerProductDecoder, self).__init__()
+        self.dropout = dropout
+        self.act = act
+
+    def forward(self, z, adj):
+        if not adj.is_sparse:
+            adj = adj.to_sparse_coo()
+
+        col = adj.coalesce().indices()[0]
+        row = adj.coalesce().indices()[1]
+        result = self.act(torch.sum(z[col] * z[row], axis=1))
+        return result
