@@ -6,7 +6,6 @@ An official source code for the paper "Integrating modularity maximization and c
 
 STMACL, a self-supervised learning framework, combines modularity maximization and contrastive learning for spatial clustering. STMACL has been applied to seven spatial transcriptomics datasets across platforms like omsFISH, STARmap,10X Visium, Stereo-seq, and Slide-seqV2, proving its capability to deliver enhanced representations for a range of downstream analyses, such as clustering, visualization, trajectory inference, and differential gene analysis.
 
-__STMACL__
 ## Requirements:
  
 STMACL is implemented in the pytorch framework. Please run STMACL on CUDA. The following packages are required to be able to run everything in this repository (included are the versions we used):
