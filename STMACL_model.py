@@ -202,9 +202,7 @@ class stmacl:
                     rec1_max = rec
 
             print("epoch_max", epoch_max)
-            print("ARI=======", ari_max)
             nmi_res = metrics.normalized_mutual_info_score(labels, idx_max)
-            print("NMI=======", nmi_res)
             self.adata.obs['STMACL'] = idx_max.astype(str)
             self.adata.obsm['emb'] = emb_max
             # self.adata.obsm['rec'] = rec1_max
